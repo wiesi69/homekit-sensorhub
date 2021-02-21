@@ -1,0 +1,10 @@
+# project
+lib
+persist
+
+# node / pnpm
+node_modules
+pnpm-lock.yaml
+
+# visual studio
+.vscode
