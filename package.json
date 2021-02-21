@@ -2,7 +2,7 @@
     "name": "homekit-sensorhub",
     "version": "0.0.1",
     "description": "Publish sensors of SensorHub equipped Raspberry Pi as HomeKit accessorries and sensors.",
-    "main": "lib/sensorhub.js",
+    "main": "lib/main.js",
     "author": "Jürgen Wiesmaier <juergen@wiesi.de>",
     "license": "ISC",
     "keywords": [
