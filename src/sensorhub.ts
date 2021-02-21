@@ -1,5 +1,5 @@
 import {
-  Service,  
+  Service,
   Accessory,
   Categories,
   Characteristic,
@@ -7,13 +7,13 @@ import {
   CharacteristicGetCallback,
   uuid
 } from "hap-nodejs";
+import { NetworkClientProfileControl } from "hap-nodejs/dist/lib/definitions";
 
-
-// DockerPi SensorHub 
-// see https://wiki.52pi.com/index.php/DockerPi_Sensor_Hub_Development_Board_SKU:_EP-0106#DockerPi_Sensor_Hub_Development_Board_V2.0
+import {
+} from "i2c-bus";
 
 // SensorHub address
-const DEVICE_BUS = 1; 
+const DEVICE_BUS = 1;
 const DEVICE_ADDR = 0x17;
 
 // SensorHub offboard sensor
@@ -46,166 +46,189 @@ const L_OVR = 0x03; // Brightness Overlow
 const L_FAIL = 0x04; // Brightness Not Found
 
 
-//
-// SensorHub Accessory
-//
- 
-const sensorHubAccessory = new Accessory("SensorHub", uuid.generate("homekit-sensorhub.wiesi69"));
-  
-// SensorHub light brightness sensor
 
-const lightSensor = new Service.LightSensor("Light Sensor")
-let ligthBrithness = 0;
+class SensorHub {
 
-const ligthBrightnessCharacteristic = lightSensor.getCharacteristic(Characteristic.Brightness)!;
-ligthBrightnessCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried current light brightness:" +ligthBrithness + " Lux");
-  callback(undefined, ligthBrithness);
-});
+  ligthBrithness: number = 0;
+  onBoardTemperature: number = 0.0;
+  onBoardHumidity: number = 0.0;
+  motionDetected: boolean = false;
+  bmp280Temperature: number = 0.0;
+  bmp280Pressure: number = 0.0;
+  offBoardTemperature: number = 0.0;
+  lastUpdate: Date = new Date();
 
-sensorHubAccessory.addService(lightSensor);
+  constructor() {
+    this.createSensorHubAccessory();
+    this.createSensorrHubBmp280Accessory();
+    this.createSensorHubOffBoardAccessorry();
+  }
 
+  // 
+  // Create Accessories
+  //
 
+  createSensorHubAccessory() {
+    const sensorHubAccessory = new Accessory("SensorHub", uuid.generate("homekit-sensorhub"));
 
-// SensorHub onboard temperature sensor
+    sensorHubAccessory.addService(this.createLightSensor());
+    sensorHubAccessory.addService(this.createOnBoardTemperatureSensor());
+    sensorHubAccessory.addService(this.createOnBoardHumiditySensor());
+    sensorHubAccessory.addService(this.createMotionDetector());
 
-const onBoardTemperatureSensor = new Service.TemperatureSensor("OnBoard Temperature Sensor");
-let onBoardTemperature = 0.0;
+    this.publishAccessory(sensorHubAccessory, "b8:27:eb:7b:6f:a2", 47128)
 
-const onBoardTemperatureCharacteristic = onBoardTemperatureSensor.getCharacteristic(Characteristic.CurrentTemperature)!;
-onBoardTemperatureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried current room temperature: " + onBoardTemperature + " C");
-  callback(undefined, onBoardTemperature);
-});
-
-sensorHubAccessory.addService(onBoardTemperatureSensor);
-
-
-
-// SensorHub onboard humidity sensor
-
-const onBoardHumiditySensor = new Service.HumiditySensor("OnBoard Humidity Sensor");
-let onBoardHumidity = 0.0;
-
-const onBoardHumidityCharacteristic = onBoardHumiditySensor.getCharacteristic(Characteristic.CurrentRelativeHumidity)!;
-onBoardHumidityCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried current humidity: " + onBoardHumidity + "%");
-  callback(undefined, onBoardHumidity);
-});
-
-sensorHubAccessory.addService(onBoardHumiditySensor);
+  }
 
 
+  createSensorrHubBmp280Accessory() {
+    const sensorHubBmp280Accessory = new Accessory("SensorHub", uuid.generate("homekit-sensorhub-bmp280"));
 
-// SensorHub motion dection sensor
+    sensorHubBmp280Accessory.addService(this.createBmp280TemperatureSensorService());
+    // sensorHubBmp280Accessory.addService(this.createBmp280PressureSensorService()); 
 
-const motionDetectionSensor = new Service.MotionSensor("Motion Detection Sensor");
-let motionDetected = false;
+    this.publishAccessory(sensorHubBmp280Accessory, "b8:27:eb:7b:6f:02", 47002);
+  }
 
-const motionDetectionCharacteristic = motionDetectionSensor.getCharacteristic(Characteristic.MotionDetected)!;
-motionDetectionCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried motion detected: " + motionDetected );
-  callback(undefined, motionDetected);
-});
 
-sensorHubAccessory.addService(motionDetectionSensor);
+  createSensorHubOffBoardAccessorry() {
+    const sensorHubOffBoardAccessory = new Accessory("SensorHub", uuid.generate("homekit-sensorhub-offboard"));
+    sensorHubOffBoardAccessory.addService(this.createOffBoardTemperatureSensorService());
+
+    this.publishAccessory(sensorHubOffBoardAccessory, "b8:27:eb:7b:6f:03", 47003);
+  }
 
 
 
+  //
+  // Create Sensor Functions
+  //
 
-// Publisch SensorHub Accessory
+  createLightSensor(): Service {
+    const lightSensor = new Service.LightSensor("Light Sensor")
 
-sensorHubAccessory.publish({
-  username: "b8:27:eb:7b:6f:a2",
-  pincode: "666-69-999",
-  port: 47128,
-  category: Categories.SENSOR,
-});
-  
-console.log("SensorHub accessory published.");
+    const ligthBrightnessCharacteristic = lightSensor.getCharacteristic(Characteristic.Brightness)!;
+    ligthBrightnessCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.debug("Queried current light brightness:" + this.ligthBrithness + " Lux");
+      callback(undefined, this.ligthBrithness);
+    });
 
+    return lightSensor;
+  }
 
-//
-// Create and publish offboard accessory 
-//
+  createOnBoardTemperatureSensor(): Service {
 
-const sensorHubBmp280Accessory = new Accessory("SensorHub", uuid.generate("wiesi69/homekit-sensorhub-bmp280"));
+    const onBoardTemperatureSensor = new Service.TemperatureSensor("OnBoard Temperature Sensor");
+    const onBoardTemperatureCharacteristic = onBoardTemperatureSensor.getCharacteristic(Characteristic.CurrentTemperature)!;
 
+    onBoardTemperatureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.debug("Queried current room temperature: " + this.onBoardTemperature + " C");
+      callback(undefined, this.onBoardTemperature);
+    });
 
-// SensorHub BMP280 Temperature Sensor
-const bmp280TemperatureSensorService = new Service.TemperatureSensor("BMP280 Temperature Sensor");
-let bmp280Temperature = 0.0;
-
-const bmp280TemperatureCharacteristic = bmp280TemperatureSensorService.getCharacteristic(Characteristic.CurrentTemperature)!;
-bmp280TemperatureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried current BMP280 temperature: " + bmp280Temperature + " C");
-  callback(undefined, bmp280Temperature);
-});
-
-sensorHubBmp280Accessory.addService(bmp280TemperatureSensorService);
+    return onBoardTemperatureSensor;
+  }
 
 
-/* Pressure Sensor not supported by HomeKit Accesssory Protocol
-// SensorHub BMP280 Pressure Sensor
-const bmp280PressurSensorService = new Service.TemperatureSensor("BMP280 Pressure Sensor");
-let bmp280Pressure = 0.0;
+  createOnBoardHumiditySensor(): Service {
+    const onBoardHumiditySensor = new Service.HumiditySensor("OnBoard Humidity Sensor");
+    const onBoardHumidityCharacteristic = onBoardHumiditySensor.getCharacteristic(Characteristic.CurrentRelativeHumidity)!;
 
-const bmp280PressureCharacteristic = bmp280PressurSensorService.getCharacteristic(Characteristic.CurrentPressure)!;
-bmp280PressureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried current BMP280 temperature: " + bmp280Pressure + " pascal");
-  callback(undefined, bmp280Pressure);
-});
+    onBoardHumidityCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.debug("Queried current humidity: " + this.onBoardHumidity + "%");
+      callback(undefined, this.onBoardHumidity);
+    });
 
-sensorHubBmp280Accessory.addService(bmp280TemperatureSensorService); 
+    return onBoardHumiditySensor;
+  }
+
+
+
+  createMotionDetector(): typeof Service | Service {
+    const motionDetectionSensor = new Service.MotionSensor("Motion Sensor");
+    const motionDetectionCharacteristic = motionDetectionSensor.getCharacteristic(Characteristic.MotionDetected)!;
+    motionDetectionCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.debug("Queried motion detected: " + this.motionDetected);
+      callback(undefined, this.motionDetected);
+    });
+
+    return motionDetectionSensor;
+  }
+
+
+  createBmp280TemperatureSensorService(): Service {
+    const bmp280TemperatureSensorService = new Service.TemperatureSensor("BMP280 Temperature Sensor");
+    const bmp280TemperatureCharacteristic = bmp280TemperatureSensorService.getCharacteristic(Characteristic.CurrentTemperature)!;
+    bmp280TemperatureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.debug("Queried current BMP280 temperature: " + this.bmp280Temperature + " C");
+      callback(undefined, this.bmp280Temperature);
+    });
+    return bmp280TemperatureSensorService;
+  }
+
+  /*
+  createBmp280PressureSensorService(): Service {
+    const bmp280PressurSensorService = new Service.PressureSensor("BMP280 Pressure Sensor");
+    const bmp280PressureCharacteristic = bmp280PressurSensorService.getCharacteristic(Characteristic.CurrentPressure)!;
+    bmp280PressureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.log("Queried current BMP280 temperature: " + bmp280Pressure + " pascal");
+      callback(undefined, bmp280Pressure);
+    });
+    return bmp280PressurSensorService;
+  }
 */
 
 
 
-sensorHubBmp280Accessory.publish({
-  username: "69:00:eb:7b:6f:02", // new username 
-  pincode: "666-69-999",
-  port: 47002, //new port
-  category: Categories.SENSOR, // value here defines the symbol shown in the pairing screen
-});
-  
-console.log("SensorHub BMP280 accessory published");
+  createOffBoardTemperatureSensorService(): Service {
+    const offBoardTemperatureSensorService = new Service.TemperatureSensor("Offboard Temperature");
 
+    const offBoardTemperatureCharacteristic = offBoardTemperatureSensorService.getCharacteristic(Characteristic.CurrentTemperature)!;
+
+    // set minValue to -100 (Apple's HomeKit Accessorry Protocol defines minValue to 0, maybe it's true for California  ...)
+    offBoardTemperatureCharacteristic.setProps({
+      minValue: -100,
+      maxValue: 100
+    });
+
+    offBoardTemperatureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+      console.debug("Queried current outside temperature: " + this.offBoardTemperature + " C");
+      callback(undefined, this.offBoardTemperature);
+    });
+    return offBoardTemperatureSensorService;
+  }
+
+
+
+  publishAccessory(accessory: Accessory, username: string, port: number) {
+
+    accessory.publish({
+      username: username,
+      pincode: "666-69-999",
+      port: port,
+      category: Categories.SENSOR,
+    });
+
+    console.debug("SensorHub accessory " + username + "published with port " + port);
+  }
+
+
+
+  // DockerPi SensorHub 
+  getSensorData() {
+
+    // see https://wiki.52pi.com/index.php/DockerPi_Sensor_Hub_Development_Board_SKU:_EP-0106#DockerPi_Sensor_Hub_Development_Board_V2.0
+
+
+
+  }
+}
 
 
 
 
 //
-// Create and publish offboard accessory 
+// main
 //
 
-const sensorHubOffBoardAccessory = new Accessory("SensorHub", uuid.generate("wiesi69/homekit-sensorhub-offboard"));
-
-const offBoardTemperatureSensorService = new Service.TemperatureSensor("Offboard Temperature");
-let offBoardTemperature = 0.0;
-
-const offBoardTemperatureCharacteristic = offBoardTemperatureSensorService.getCharacteristic(Characteristic.CurrentTemperature)!;
-
-// set minValue to -100 (Apple's HomeKit Accessorry Protocol defines minValue to 0, maybe it's true for California  ...)
-offBoardTemperatureCharacteristic.setProps({
-  minValue: -100,
-  maxValue: 100
-});
-
-offBoardTemperatureCharacteristic.on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-  console.log("Queried current outside temperature: " + offBoardTemperature + " C");
-  callback(undefined, offBoardTemperature);
-});
-
-
-sensorHubOffBoardAccessory.addService(offBoardTemperatureSensorService);
-
-
-sensorHubOffBoardAccessory.publish({
-  username: "69:00:eb:7b:6f:03", // new username 
-  pincode: "666-69-999",
-  port: 47003, //new port
-  category: Categories.SENSOR, // value here defines the symbol shown in the pairing screen
-});
-  
-console.log("SensorHub Off-Board accessory published.");
-
+let sensorHub = new SensorHub();

@@ -1,24 +1,36 @@
 {
     "name": "homekit-sensorhub",
     "version": "0.0.1",
-    "description": "Homekit support for a Sensorhub equipped Raspberry Pi.",
+    "description": "Publish sensors of SensorHub equipped Raspberry Pi as HomeKit accessorries and sensors.",
     "main": "lib/sensorhub.js",
+    "author": "Jürgen Wiesmaier <juergen@wiesi.de>",
+    "license": "ISC",
+    "keywords": [
+        "homekit",
+        "sensorhub",
+        "raspberry",
+        "raspi",
+        "rpi",
+        "pi",
+        "beaglebone",
+        "smbus",
+        "i2c"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/wiesi69/homekit-sensorhub.git"
+    },
+    "dependencies": {
+        "hap-nodejs": "^0.9.1",
+        "i2c-bus": "^5.2.1"
+    },
+    "devDependencies": {
+        "@types/i2c-bus": "^5.1.0",
+        "@types/node": "^14.14.31"
+    },
     "scripts": {
         "clean": "rimraf ./lib",
         "build": "npm run clean && tsc",
         "test": "echo \"Error: no test specified\" && exit 1"
-    },
-    "author": "Jürgen Wiesmaier <juergen@wiesi.de>",
-    "license": "ISC",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/wiesi69/homeit-sensorhub.git"
-    },
-    "devDependencies": {
-        "@types/node": "^14.14.31"
-    },
-    "dependencies": {
-        "hap-nodejs": "^0.9.1",
-        "pigpio": "^3.3.0"
     }
 }
